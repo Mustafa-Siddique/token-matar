@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {IERC20} from '@openzeppelin/contracts/token/ERC20/IERC20.sol';
-import {Context} from '@openzeppelin/contracts/utils/Context.sol';
-import {Ownable} from '@openzeppelin/contracts/access/Ownable.sol';
-import { IERC20Errors } from './IERC20Errors.sol';
-import "@openzeppelin/contracts/access/Ownable.sol";
-import './IPancakeRouter.sol';
-import './IPancakeFactory.sol';
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Context} from "@openzeppelin/contracts/utils/Context.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {IERC20Errors} from "./IERC20Errors.sol";
+import "./IPancakeRouter.sol";
+import "./IPancakeFactory.sol";
 
 contract MATAR is Context, IERC20, Ownable, IERC20Errors {
     mapping(address account => uint256) private _balances;
-    mapping(address account => mapping(address spender => uint256)) private _allowances;
+    mapping(address account => mapping(address spender => uint256))
+        private _allowances;
     mapping(address => bool) private _isExcludedFromFee;
 
     uint256 private _totalSupply;
@@ -39,15 +39,21 @@ contract MATAR is Context, IERC20, Ownable, IERC20Errors {
     address private pancakePair;
 
     // Constructor
-    constructor(address initialOwner)
-        Ownable(initialOwner)
-    {
-        _name = 'MATAR';
-        _symbol = 'MATAR';
+    constructor(address initialOwner) Ownable(initialOwner) {
+        _name = "MATAR";
+        _symbol = "MATAR";
         _totalSupply = 21000000 * 10 ** decimals();
-        IPancakeRouter02 _pancakeRouter = IPancakeRouter02(0x10ED43C718714eb63d5aA57B78B54704E256024E);
+        // Mainnet
+        // IPancakeRouter02 _pancakeRouter = IPancakeRouter02(0x10ED43C718714eb63d5aA57B78B54704E256024E);
+        // Testnet
+        IPancakeRouter02 _pancakeRouter = IPancakeRouter02(
+            0xD99D1c33F9fC3444f8101754aBC46c52416550D1
+        );
         pancakeRouter = _pancakeRouter;
-        pancakePair = IPancakeFactory(_pancakeRouter.factory()).createPair(address(this), _pancakeRouter.WETH());
+        pancakePair = IPancakeFactory(_pancakeRouter.factory()).createPair(
+            address(this),
+            _pancakeRouter.WETH()
+        );
         _isExcludedFromFee[initialOwner] = true;
         _isExcludedFromFee[address(this)] = true;
         _mint(initialOwner, _totalSupply);
@@ -78,7 +84,10 @@ contract MATAR is Context, IERC20, Ownable, IERC20Errors {
         return true;
     }
 
-    function allowance(address owner, address spender) public view virtual returns (uint256) {
+    function allowance(
+        address owner,
+        address spender
+    ) public view virtual returns (uint256) {
         return _allowances[owner][spender];
     }
 
@@ -87,7 +96,11 @@ contract MATAR is Context, IERC20, Ownable, IERC20Errors {
         return true;
     }
 
-    function transferFrom(address sender, address recipient, uint256 amount) public returns (bool) {
+    function transferFrom(
+        address sender,
+        address recipient,
+        uint256 amount
+    ) public returns (bool) {
         _spendAllowance(sender, _msgSender(), amount);
         _transfer(sender, recipient, amount);
         return true;
@@ -95,7 +108,6 @@ contract MATAR is Context, IERC20, Ownable, IERC20Errors {
 
     function _mint(address account, uint256 amount) internal virtual {
         require(account != address(0), "ERC20: mint to the zero address");
-        _totalSupply += amount;
         _balances[account] += amount;
         emit Transfer(address(0), account, amount);
     }
@@ -107,7 +119,12 @@ contract MATAR is Context, IERC20, Ownable, IERC20Errors {
         emit Transfer(account, address(0), amount);
     }
 
-    function _approve(address owner, address spender, uint256 value, bool emitEvent) internal virtual {
+    function _approve(
+        address owner,
+        address spender,
+        uint256 value,
+        bool emitEvent
+    ) internal virtual {
         if (owner == address(0)) {
             revert ERC20InvalidApprover(address(0));
         }
@@ -120,11 +137,19 @@ contract MATAR is Context, IERC20, Ownable, IERC20Errors {
         }
     }
 
-    function _spendAllowance(address owner, address spender, uint256 value) internal virtual {
+    function _spendAllowance(
+        address owner,
+        address spender,
+        uint256 value
+    ) internal virtual {
         uint256 currentAllowance = allowance(owner, spender);
         if (currentAllowance != type(uint256).max) {
             if (currentAllowance < value) {
-                revert ERC20InsufficientAllowance(spender, currentAllowance, value);
+                revert ERC20InsufficientAllowance(
+                    spender,
+                    currentAllowance,
+                    value
+                );
             }
             unchecked {
                 _approve(owner, spender, currentAllowance - value, false);
@@ -134,12 +159,21 @@ contract MATAR is Context, IERC20, Ownable, IERC20Errors {
 
     function _burnFrom(address account, uint256 amount) internal virtual {
         uint256 currentAllowance = allowance(account, _msgSender());
-        require(currentAllowance >= amount, "ERC20: burn amount exceeds allowance");
-        unchecked {_approve(account, _msgSender(), currentAllowance - amount, true);}
+        require(
+            currentAllowance >= amount,
+            "ERC20: burn amount exceeds allowance"
+        );
+        unchecked {
+            _approve(account, _msgSender(), currentAllowance - amount, true);
+        }
         _burn(account, amount);
     }
 
-    function _transfer(address sender, address recipient, uint256 amount) internal {
+    function _transfer(
+        address sender,
+        address recipient,
+        uint256 amount
+    ) internal {
         require(sender != address(0), "ERC20: transfer from the zero address");
         require(recipient != address(0), "ERC20: transfer to the zero address");
         require(amount > 0, "Transfer amount must be greater than zero");
@@ -147,19 +181,24 @@ contract MATAR is Context, IERC20, Ownable, IERC20Errors {
 
         if (!_isExcludedFromFee[sender] && !_isExcludedFromFee[recipient]) {
             require(tradingEnabled, "Trading is not enabled");
-                fee = amount * buyTax / 100;
+            fee = (amount * buyTax) / 100;
         }
-        if(_isExcludedFromFee[sender] || _isExcludedFromFee[recipient]){
+        if (_isExcludedFromFee[sender] || _isExcludedFromFee[recipient]) {
             fee = 0;
         }
-        if (sender == pancakePair && recipient != address(this) && !_isExcludedFromFee[sender] && !_isExcludedFromFee[recipient]) {
-            fee = amount * sellTax / 100;
+        if (
+            recipient == pancakePair &&
+            sender != address(this) &&
+            !_isExcludedFromFee[sender] &&
+            !_isExcludedFromFee[recipient]
+        ) {
+            fee = (amount * sellTax) / 100;
         }
 
         _balances[sender] -= amount;
         _balances[recipient] += (amount - fee);
         emit Transfer(sender, recipient, (amount - fee));
-        
+
         if (fee > 0) {
             _balances[deadAddress] += fee;
             emit Transfer(sender, deadAddress, fee);
@@ -167,13 +206,19 @@ contract MATAR is Context, IERC20, Ownable, IERC20Errors {
     }
 
     function whiteListWallet(address _address) public onlyOwner {
-        require(_isExcludedFromFee[_address] == false, "Address is already whitelisted");
+        require(
+            _isExcludedFromFee[_address] == false,
+            "Address is already whitelisted"
+        );
         _isExcludedFromFee[_address] = true;
         emit WalletWhitelisted(_address);
     }
 
     function removeWalletFromWhiteList(address _address) public onlyOwner {
-        require(_isExcludedFromFee[_address] == true, "Address is not whitelisted");
+        require(
+            _isExcludedFromFee[_address] == true,
+            "Address is not whitelisted"
+        );
         _isExcludedFromFee[_address] = false;
         emit WhitelistRemoved(_address);
     }
@@ -208,8 +253,13 @@ contract MATAR is Context, IERC20, Ownable, IERC20Errors {
 
     function withdrawBEP20(address _tokenAddress) public onlyOwner {
         require(_tokenAddress != address(this), "Cannot withdraw MATAR tokens");
-        require(IERC20(_tokenAddress).balanceOf(address(this)) > 0, "Insufficient balance");
-        IERC20(_tokenAddress).transfer(owner(), IERC20(_tokenAddress).balanceOf(address(this)));
+        require(
+            IERC20(_tokenAddress).balanceOf(address(this)) > 0,
+            "Insufficient balance"
+        );
+        IERC20(_tokenAddress).transfer(
+            owner(),
+            IERC20(_tokenAddress).balanceOf(address(this))
+        );
     }
-    
 }
