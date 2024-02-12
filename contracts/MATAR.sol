@@ -13,6 +13,7 @@ contract MATAR is Context, IERC20, Ownable, IERC20Errors {
     mapping(address account => mapping(address spender => uint256))
         private _allowances;
     mapping(address => bool) private _isExcludedFromFee;
+    mapping (address => bool) public automatedMarketMakerPairs;
 
     uint256 private _totalSupply;
 
@@ -33,16 +34,20 @@ contract MATAR is Context, IERC20, Ownable, IERC20Errors {
     event WalletWhitelisted(address _address);
     event WhitelistRemoved(address _address);
     event TaxUpdate(uint256 buyTax, uint256 sellTax);
+    event SetAutomatedMarketMakerPair(address indexed pair, bool indexed value);
+    event LiquidityAdded(uint256 tokenAmount, uint256 bnbAmount);
 
     address public deadAddress = 0x000000000000000000000000000000000000dEaD;
+    address public taxWallet;
     IPancakeRouter02 public pancakeRouter;
-    address private pancakePair;
+    address public pancakePair;
 
     // Constructor
     constructor(address initialOwner) Ownable(initialOwner) {
         _name = "MATAR";
         _symbol = "MATAR";
         _totalSupply = 21000000 * 10 ** decimals();
+        taxWallet = address(this);
         // Mainnet
         // IPancakeRouter02 _pancakeRouter = IPancakeRouter02(0x10ED43C718714eb63d5aA57B78B54704E256024E);
         // Testnet
@@ -54,6 +59,7 @@ contract MATAR is Context, IERC20, Ownable, IERC20Errors {
             address(this),
             _pancakeRouter.WETH()
         );
+        _setAutomatedMarketMakerPair(address(pancakePair), true);
         _isExcludedFromFee[initialOwner] = true;
         _isExcludedFromFee[address(this)] = true;
         _mint(initialOwner, _totalSupply);
@@ -104,6 +110,16 @@ contract MATAR is Context, IERC20, Ownable, IERC20Errors {
         _spendAllowance(sender, _msgSender(), amount);
         _transfer(sender, recipient, amount);
         return true;
+    }
+
+    function setAutomatedMarketMakerPair (address pair, bool value) public onlyOwner {
+        require(pair != pancakePair, "The Pancake pair cannot be removed from automatedMarketMakerPairs");
+        _setAutomatedMarketMakerPair(pair, value);
+    }
+
+    function _setAutomatedMarketMakerPair(address pair, bool value) private {
+        automatedMarketMakerPairs[pair] = value;
+        emit SetAutomatedMarketMakerPair(pair, value);
     }
 
     function _mint(address account, uint256 amount) internal virtual {
@@ -178,31 +194,51 @@ contract MATAR is Context, IERC20, Ownable, IERC20Errors {
         require(recipient != address(0), "ERC20: transfer to the zero address");
         require(amount > 0, "Transfer amount must be greater than zero");
         uint256 fee = 0;
+        bool takeFee = true;
 
         if (!_isExcludedFromFee[sender] && !_isExcludedFromFee[recipient]) {
             require(tradingEnabled, "Trading is not enabled");
-            fee = (amount * buyTax) / 100;
         }
+
         if (_isExcludedFromFee[sender] || _isExcludedFromFee[recipient]) {
             fee = 0;
+            takeFee = false;
         }
-        if (
-            recipient == pancakePair &&
-            sender != address(this) &&
-            !_isExcludedFromFee[sender] &&
-            !_isExcludedFromFee[recipient]
-        ) {
+
+        if (takeFee) {
+            if (automatedMarketMakerPairs[sender]) {
+            fee = (amount * buyTax) / 100;
+        } else if (automatedMarketMakerPairs[recipient]) {
             fee = (amount * sellTax) / 100;
+        }
         }
 
         _balances[sender] -= amount;
         _balances[recipient] += (amount - fee);
         emit Transfer(sender, recipient, (amount - fee));
 
-        if (fee > 0) {
+        if (fee > 0 && feeBurnEnabled) {
             _balances[deadAddress] += fee;
             emit Transfer(sender, deadAddress, fee);
         }
+        if (fee > 0 && !feeBurnEnabled) {
+            _balances[taxWallet] += fee;
+            emit Transfer(sender, taxWallet, fee);
+        }
+    }
+
+    function _addLiquidity(uint256 tokenAmount, uint256 bnbAmount) private {
+        _approve(address(this), address(pancakeRouter), tokenAmount, true);
+        try pancakeRouter.addLiquidityETH{value: bnbAmount}(
+            address(this),
+            tokenAmount,
+            0,
+            0,
+            owner(),
+            block.timestamp
+        ) {
+            emit LiquidityAdded(tokenAmount, bnbAmount);
+        } catch {}
     }
 
     function whiteListWallet(address _address) public onlyOwner {
@@ -229,9 +265,20 @@ contract MATAR is Context, IERC20, Ownable, IERC20Errors {
         emit TaxUpdate(_buyTax, _sellTax);
     }
 
+    function updateTaxWallet(address _wallet) public onlyOwner {
+        require(taxWallet != _wallet, "Wallet already in use");
+        require(_wallet != address(0), "Tax wallet cannot be a deadAddress");
+        taxWallet = _wallet;
+    }
+
     function enableTrading() public onlyOwner {
         tradingEnabled = true;
         emit TradingEnabled(true);
+    }
+
+    function disableTrading() public onlyOwner {
+        tradingEnabled = false;
+        emit TradingEnabled(false);
     }
 
     function enableFeeBurn() public onlyOwner {
